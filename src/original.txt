@@ -1,0 +1,126 @@
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import Login from './components/Login';
+import Dashboard from './components/layout/Dashboard';
+import Home from './components/pages/Home';
+import Teachers from './components/pages/Teachers';
+import Delegates from './components/pages/Delegates';
+import Courses from './components/pages/Courses';
+import Subjects from './components//pages/Subjects';
+import Rooms from './components/pages/Rooms';
+import Departments from './components/pages/Departments';
+import Schedule from './components/pages/Schedule';
+
+// User interface
+export interface User {
+  name: string;
+  email: string;
+  profilePic?: string;
+  provider?: 'email' | 'google' | 'facebook';
+}
+
+// Update the component props interfaces to accept necessary props
+interface HomeProps {
+  user: User | null;
+  onLogout: () => void;
+}
+
+const App: React.FC = () => {
+  // Authentication state
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [currentPage, setCurrentPage] = useState<string>('home');
+
+  // Check for stored auth on load
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    const storedLoggedIn = localStorage.getItem('isLoggedIn');
+    
+    if (storedUser && storedLoggedIn === 'true') {
+      setUser(JSON.parse(storedUser));
+      setIsLoggedIn(true);
+    }
+  }, []);
+
+  // Handle successful login
+  const handleLoginSuccess = (userData: User) => {
+    setUser(userData);
+    setIsLoggedIn(true);
+    
+    // Store auth info in localStorage (optional, for persistence)
+    localStorage.setItem('user', JSON.stringify(userData));
+    localStorage.setItem('isLoggedIn', 'true');
+  };
+
+  // Handle logout
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setUser(null);
+    
+    // Clear stored auth info
+    localStorage.removeItem('user');
+    localStorage.removeItem('isLoggedIn');
+  };
+
+  // Component to render the current page within Dashboard
+  const CurrentPageComponent = () => {
+    switch (currentPage) {
+      case 'home':
+        return <Home user={user} onLogout={handleLogout} />;
+      case 'teachers':
+        return <Teachers />;
+      case 'delegates':
+        return <Delegates />;
+      case 'courses':
+        return <Courses />;
+      case 'subjects':
+        return <Subjects />;
+      case 'rooms':
+        return <Rooms />;
+      case 'departments':
+        return <Departments />;
+      case 'schedule':
+        return <Schedule />;
+      default:
+        return <Home user={user} onLogout={handleLogout} />;
+    }
+  };
+
+  return (
+    <Router>
+      <Routes>
+        {/* Public route - Login */}
+        <Route 
+          path="/login" 
+          element={
+            isLoggedIn ? 
+              <Navigate to="/" /> : 
+              <Login onLoginSuccess={handleLoginSuccess} />
+          } 
+        />
+        
+        {/* Protected routes - Dashboard and its children */}
+        <Route 
+          path="/" 
+          element={
+            isLoggedIn ? (
+              <Dashboard 
+                currentPage={currentPage} 
+                setCurrentPage={setCurrentPage}
+              >
+                <CurrentPageComponent />
+              </Dashboard>
+            ) : (
+              <Navigate to="/login" />
+            )
+          } 
+        />
+        
+        {/* Catch all route - redirect to dashboard or login */}
+        <Route path="*" element={<Navigate to={isLoggedIn ? "/" : "/login"} />} />
+      </Routes>
+    </Router>
+  );
+};
+
+export default App;
