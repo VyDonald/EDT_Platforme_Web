@@ -3,64 +3,47 @@ import { PlusIcon, PencilIcon, TrashIcon, SearchIcon } from 'lucide-react';
 
 interface Room {
   id: number;
-  name: string;
-  capacity: number;
-  building: string;
-  floor: number;
-  isComputerLab: boolean;
-  hasProjector: boolean;
+  nom: string;
+  capacite: number;
 }
 
 const Rooms = () => {
   const [rooms, setRooms] = useState<Room[]>([
-    { id: 1, name: 'A101', capacity: 30, building: 'Bâtiment A', floor: 1, isComputerLab: false, hasProjector: true },
-    { id: 2, name: 'B205', capacity: 45, building: 'Bâtiment B', floor: 2, isComputerLab: true, hasProjector: true },
-    { id: 3, name: 'C303', capacity: 60, building: 'Bâtiment C', floor: 3, isComputerLab: false, hasProjector: true },
-    { id: 4, name: 'D104', capacity: 20, building: 'Bâtiment D', floor: 1, isComputerLab: true, hasProjector: false },
+    { id: 1, nom: 'A101', capacite: 30 },
+    { id: 2, nom: 'B205', capacite: 45 },
+    { id: 3, nom: 'C303', capacite: 60 },
+    { id: 4, nom: 'D104', capacite: 20 },
   ]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState({
-    name: '',
-    capacity: 0,
-    building: '',
-    floor: 0,
-    isComputerLab: false,
-    hasProjector: false
+    nom: '',
+    capacite: 0,
   });
 
   const handleOpenModal = (room: Room | null = null) => {
     if (room) {
       setFormData({
-        name: room.name,
-        capacity: room.capacity,
-        building: room.building,
-        floor: room.floor,
-        isComputerLab: room.isComputerLab,
-        hasProjector: room.hasProjector
+        nom: room.nom,
+        capacite: room.capacite,
       });
       setCurrentRoom(room);
     } else {
       setFormData({
-        name: '',
-        capacity: 0,
-        building: '',
-        floor: 0,
-        isComputerLab: false,
-        hasProjector: false
+        nom: '',
+        capacite: 0,
       });
       setCurrentRoom(null);
     }
     setIsModalOpen(true);
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value, type } = e.target as HTMLInputElement;
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
     setFormData({
       ...formData,
-      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : 
-              type === 'number' ? Number(value) : value
+      [name]: name === 'capacite' ? Number(value) : value,
     });
   };
 
@@ -75,7 +58,7 @@ const Rooms = () => {
       // Add new room
       const newRoom: Room = {
         id: rooms.length > 0 ? Math.max(...rooms.map(r => r.id)) + 1 : 1,
-        ...formData
+        ...formData,
       };
       setRooms([...rooms, newRoom]);
     }
@@ -89,8 +72,7 @@ const Rooms = () => {
   };
 
   const filteredRooms = rooms.filter(room => 
-    room.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    room.building.toLowerCase().includes(searchTerm.toLowerCase())
+    room.nom.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -127,26 +109,14 @@ const Rooms = () => {
             <tr>
               <th className="py-3 px-4 text-left text-sm font-medium text-gray-600 uppercase tracking-wider">Nom</th>
               <th className="py-3 px-4 text-left text-sm font-medium text-gray-600 uppercase tracking-wider">Capacité</th>
-              <th className="py-3 px-4 text-left text-sm font-medium text-gray-600 uppercase tracking-wider">Bâtiment</th>
-              <th className="py-3 px-4 text-left text-sm font-medium text-gray-600 uppercase tracking-wider">Étage</th>
-              <th className="py-3 px-4 text-left text-sm font-medium text-gray-600 uppercase tracking-wider">Salle Info</th>
-              <th className="py-3 px-4 text-left text-sm font-medium text-gray-600 uppercase tracking-wider">Projecteur</th>
               <th className="py-3 px-4 text-left text-sm font-medium text-gray-600 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {filteredRooms.map((room) => (
               <tr key={room.id} className="hover:bg-gray-50">
-                <td className="py-3 px-4 text-sm text-gray-900">{room.name}</td>
-                <td className="py-3 px-4 text-sm text-gray-900">{room.capacity}</td>
-                <td className="py-3 px-4 text-sm text-gray-900">{room.building}</td>
-                <td className="py-3 px-4 text-sm text-gray-900">{room.floor}</td>
-                <td className="py-3 px-4 text-sm text-gray-900">
-                  {room.isComputerLab ? 'Oui' : 'Non'}
-                </td>
-                <td className="py-3 px-4 text-sm text-gray-900">
-                  {room.hasProjector ? 'Oui' : 'Non'}
-                </td>
+                <td className="py-3 px-4 text-sm text-gray-900">{room.nom}</td>
+                <td className="py-3 px-4 text-sm text-gray-900">{room.capacite}</td>
                 <td className="py-3 px-4 text-sm text-gray-900 flex">
                   <button 
                     onClick={() => handleOpenModal(room)} 
@@ -179,8 +149,8 @@ const Rooms = () => {
                 <label className="block text-gray-700 mb-2">Nom</label>
                 <input
                   type="text"
-                  name="name"
-                  value={formData.name}
+                  name="nom"
+                  value={formData.nom}
                   onChange={handleChange}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   required
@@ -190,55 +160,13 @@ const Rooms = () => {
                 <label className="block text-gray-700 mb-2">Capacité</label>
                 <input
                   type="number"
-                  name="capacity"
-                  value={formData.capacity}
+                  name="capacite"
+                  value={formData.capacite}
                   onChange={handleChange}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   required
                   min="0"
                 />
-              </div>
-              <div className="mb-4">
-                <label className="block text-gray-700 mb-2">Bâtiment</label>
-                <input
-                  type="text"
-                  name="building"
-                  value={formData.building}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  required
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-gray-700 mb-2">Étage</label>
-                <input
-                  type="number"
-                  name="floor"
-                  value={formData.floor}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  required
-                />
-              </div>
-              <div className="mb-4 flex items-center">
-                <input
-                  type="checkbox"
-                  name="isComputerLab"
-                  checked={formData.isComputerLab}
-                  onChange={handleChange}
-                  className="h-4 w-4 text-emerald-500 mr-2"
-                />
-                <label className="text-gray-700">Salle informatique</label>
-              </div>
-              <div className="mb-6 flex items-center">
-                <input
-                  type="checkbox"
-                  name="hasProjector"
-                  checked={formData.hasProjector}
-                  onChange={handleChange}
-                  className="h-4 w-4 text-emerald-500 mr-2"
-                />
-                <label className="text-gray-700">Équipée d'un projecteur</label>
               </div>
               <div className="flex justify-end">
                 <button

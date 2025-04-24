@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { CalendarIcon, DownloadIcon, PlusIcon, PencilIcon, TrashIcon, ListIcon, SearchIcon } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 
 // Composant Modal pour les formulaires et boîtes de dialogue
 interface ModalProps {
@@ -20,7 +22,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
         <div className="p-4 border-b flex justify-between items-center">
           <h3 className="font-bold text-lg">{title}</h3>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-            &times;
+            ×
           </button>
         </div>
         <div className="p-4">
@@ -52,7 +54,7 @@ interface ScheduleItem {
 interface ScheduleManager {
   id: number;
   title: string;
-  dateRange: string;
+  dateRange: [Date | null, Date | null]; // Changé pour stocker une plage de dates
   section: string;
   items: ScheduleItem[];
   createdAt: Date;
@@ -70,7 +72,7 @@ interface FormData {
 // Interface pour les informations de l'emploi du temps
 interface ScheduleInfo {
   title: string;
-  dateRange: string;
+  dateRange: [Date | null, Date | null]; // Changé pour stocker une plage de dates
   section: string;
 }
 
@@ -86,6 +88,26 @@ const timeSlots: TimeSlot[] = [
 // Sections disponibles
 const sections = ['MIAGE', 'ABF', 'MID'];
 
+// Listes déroulantes statiques pour enseignants, cours, et salles
+const teachers = [
+  { id: 'utilisateur_2', name: 'Marie Curie' },
+  { id: 'utilisateur_3', name: 'Albert Einstein' },
+  { id: 'utilisateur_4', name: 'Isaac Newton' },
+];
+
+const courses = [
+  { id: 'cours_1', name: 'Algorithmique avancée' },
+  { id: 'cours_2', name: 'Droit constitutionnel' },
+  { id: 'cours_3', name: 'Statistiques' },
+];
+
+const rooms = [
+  { id: 'salle_1', name: 'A101' },
+  { id: 'salle_2', name: 'B205' },
+  { id: 'salle_3', name: 'C303' },
+  { id: 'salle_4', name: 'D104' },
+];
+
 const Schedule: React.FC = () => {
   // État pour suivre l'onglet actif
   const [activeTab, setActiveTab] = useState<'create' | 'list'>('create');
@@ -97,7 +119,7 @@ const Schedule: React.FC = () => {
   const [currentSchedule, setCurrentSchedule] = useState<ScheduleManager>({
     id: Date.now(),
     title: '',
-    dateRange: '',
+    dateRange: [null, null],
     section: '',
     items: [],
     createdAt: new Date()
@@ -124,7 +146,7 @@ const Schedule: React.FC = () => {
   // État pour les informations de l'emploi du temps
   const [scheduleInfo, setScheduleInfo] = useState<ScheduleInfo>({
     title: '',
-    dateRange: '',
+    dateRange: [null, null],
     section: ''
   });
   
@@ -143,7 +165,11 @@ const Schedule: React.FC = () => {
         const parsedSchedules = JSON.parse(savedSchedules);
         setSchedules(parsedSchedules.map((schedule: any) => ({
           ...schedule,
-          createdAt: new Date(schedule.createdAt)
+          createdAt: new Date(schedule.createdAt),
+          dateRange: [
+            schedule.dateRange[0] ? new Date(schedule.dateRange[0]) : null,
+            schedule.dateRange[1] ? new Date(schedule.dateRange[1]) : null
+          ]
         })));
       } catch (e) {
         console.error('Erreur lors du chargement des emplois du temps:', e);
@@ -220,13 +246,13 @@ const Schedule: React.FC = () => {
   const createNewSchedule = () => {
     setScheduleInfo({
       title: '',
-      dateRange: '',
+      dateRange: [null, null],
       section: ''
     });
     setCurrentSchedule({
       id: Date.now(),
       title: '',
-      dateRange: '',
+      dateRange: [null, null],
       section: '',
       items: [],
       createdAt: new Date()
@@ -252,8 +278,8 @@ const Schedule: React.FC = () => {
   
   const saveSchedule = () => {
     // Vérifier si l'emploi du temps a un titre et une période
-    if (!currentSchedule.title) {
-      alert("Veuillez créer un emploi du temps en définissant un titre et une période");
+    if (!currentSchedule.title || !currentSchedule.dateRange[0] || !currentSchedule.dateRange[1]) {
+      alert("Veuillez créer un emploi du temps en définissant un titre, une période et une section");
       setIsScheduleModalOpen(true);
       return;
     }
@@ -275,7 +301,7 @@ const Schedule: React.FC = () => {
     setCurrentSchedule({
       id: Date.now(),
       title: '',
-      dateRange: '',
+      dateRange: [null, null],
       section: '',
       items: [],
       createdAt: new Date()
@@ -283,7 +309,7 @@ const Schedule: React.FC = () => {
     
     setScheduleInfo({
       title: '',
-      dateRange: '',
+      dateRange: [null, null],
       section: ''
     });
     
@@ -313,11 +339,17 @@ const Schedule: React.FC = () => {
     }
   };
   
+  // Formatter la période pour l'affichage
+  const formatDateRange = (range: [Date | null, Date | null]): string => {
+    if (!range[0] || !range[1]) return '';
+    return `Du ${range[0].toLocaleDateString('fr-FR')} au ${range[1].toLocaleDateString('fr-FR')}`;
+  };
+  
   // Filtrer les emplois du temps selon les critères de recherche
   const filteredSchedules = schedules.filter(schedule => {
     const matchesSearchTerm = 
       schedule.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      schedule.dateRange.toLowerCase().includes(searchTerm.toLowerCase());
+      formatDateRange(schedule.dateRange).toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesSection = sectionFilter ? schedule.section === sectionFilter : true;
     
@@ -426,7 +458,7 @@ const Schedule: React.FC = () => {
                 disabled={!currentSchedule.title}
               >
                 <PlusIcon className="mr-2" size={16} />
-                Ajouter un cours
+                Ajouter une séance
               </button>
               <button 
                 onClick={exportPDF} 
@@ -454,7 +486,7 @@ const Schedule: React.FC = () => {
             <div ref={scheduleRef} className="bg-white p-6 rounded-lg shadow">
               <div className="text-center mb-6">
                 <h1 className="text-2xl font-bold uppercase">{currentSchedule.title}</h1>
-                <p className="text-md mt-1">({currentSchedule.dateRange})</p>
+                <p className="text-md mt-1">({formatDateRange(currentSchedule.dateRange)})</p>
                 <p className="text-sm mt-1 bg-emerald-100 text-emerald-700 px-2 py-1 rounded inline-block">
                   Section: {currentSchedule.section}
                 </p>
@@ -602,7 +634,7 @@ const Schedule: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-gray-500 mt-1">{schedule.dateRange}</p>
+                    <p className="text-sm text-gray-500 mt-1">{formatDateRange(schedule.dateRange)}</p>
                     <p className="text-xs text-gray-400 mt-1">
                       Créé le {new Date(schedule.createdAt).toLocaleDateString()}
                     </p>
@@ -610,7 +642,7 @@ const Schedule: React.FC = () => {
                   <div className="flex justify-between mt-4">
                     <div className="text-sm">
                       <span className="mr-2 bg-gray-100 px-2 py-1 rounded text-gray-600">
-                        {schedule.items.length} cours
+                        {schedule.items.length} séances
                       </span>
                     </div>
                     <div className="space-x-1">
@@ -637,11 +669,11 @@ const Schedule: React.FC = () => {
         </div>
       )}
       
-      {/* Modal pour ajouter/modifier un cours */}
+      {/* Modal pour ajouter/modifier une séance */}
       <Modal 
         isOpen={isItemModalOpen} 
         onClose={() => setIsItemModalOpen(false)} 
-        title={currentItem ? 'Modifier un cours' : 'Ajouter un cours'}
+        title={currentItem ? 'Modifier une séance' : 'Ajouter une séance'}
       >
         <form onSubmit={handleItemSubmit} className="space-y-4">
           <div>
@@ -684,39 +716,51 @@ const Schedule: React.FC = () => {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Cours
             </label>
-            <input 
-              type="text" 
+            <select 
               value={formData.course} 
               onChange={(e) => setFormData({...formData, course: e.target.value})} 
               className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500" 
-              required 
-            />
+              required
+            >
+              <option value="">Sélectionnez un cours</option>
+              {courses.map(course => (
+                <option key={course.id} value={course.name}>{course.name}</option>
+              ))}
+            </select>
           </div>
           
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Enseignant
             </label>
-            <input 
-              type="text" 
+            <select 
               value={formData.teacher} 
               onChange={(e) => setFormData({...formData, teacher: e.target.value})} 
               className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500" 
-              required 
-            />
+              required
+            >
+              <option value="">Sélectionnez un enseignant</option>
+              {teachers.map(teacher => (
+                <option key={teacher.id} value={teacher.name}>{teacher.name}</option>
+              ))}
+            </select>
           </div>
           
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Salle
             </label>
-            <input 
-              type="text" 
+            <select 
               value={formData.room} 
               onChange={(e) => setFormData({...formData, room: e.target.value})} 
               className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500" 
-              required 
-            />
+              required
+            >
+              <option value="">Sélectionnez une salle</option>
+              {rooms.map(room => (
+                <option key={room.id} value={room.name}>{room.name}</option>
+              ))}
+            </select>
           </div>
           
           <div className="flex justify-end space-x-2">
@@ -779,14 +823,37 @@ const Schedule: React.FC = () => {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Période
             </label>
-            <input 
-              type="text" 
-              value={scheduleInfo.dateRange} 
-              onChange={(e) => setScheduleInfo({...scheduleInfo, dateRange: e.target.value})} 
-              placeholder="Ex: Du 01/09/2023 au 30/12/2023"
-              className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500" 
-              required 
-            />
+            <div className="flex space-x-2">
+              <DatePicker
+                selected={scheduleInfo.dateRange[0]}
+                onChange={(date: Date) => setScheduleInfo({
+                  ...scheduleInfo,
+                  dateRange: [date, scheduleInfo.dateRange[1]]
+                })}
+                selectsStart
+                startDate={scheduleInfo.dateRange[0] || undefined}
+                endDate={scheduleInfo.dateRange[1] || undefined}
+                placeholderText="Date de début"
+                className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                dateFormat="dd/MM/yyyy"
+                required
+              />
+              <DatePicker
+                selected={scheduleInfo.dateRange[1]}
+                onChange={(date: Date) => setScheduleInfo({
+                  ...scheduleInfo,
+                  dateRange: [scheduleInfo.dateRange[0], date]
+                })}
+                selectsEnd
+                startDate={scheduleInfo.dateRange[0] || undefined}
+                endDate={scheduleInfo.dateRange[1] || undefined}
+                minDate={scheduleInfo.dateRange[0] || undefined}
+                placeholderText="Date de fin"
+                className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                dateFormat="dd/MM/yyyy"
+                required
+              />
+            </div>
           </div>
           
           <div className="flex justify-end space-x-2">
