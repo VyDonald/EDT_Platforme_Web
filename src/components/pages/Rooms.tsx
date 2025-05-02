@@ -1,28 +1,47 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PlusIcon, PencilIcon, TrashIcon, SearchIcon } from 'lucide-react';
+import { getSalles, createSalle, updateSalle, deleteSalle } from '../../services/api';
 
-interface Room {
-  id: number;
+// Interface pour une Salle (mise à jour avec id: string)
+interface Salle {
+  id: string; // Changé de number à string
   nom: string;
   capacite: number;
 }
 
-const Rooms = () => {
-  const [rooms, setRooms] = useState<Room[]>([
-    { id: 1, nom: 'A101', capacite: 30 },
-    { id: 2, nom: 'B205', capacite: 45 },
-    { id: 3, nom: 'C303', capacite: 60 },
-    { id: 4, nom: 'D104', capacite: 20 },
-  ]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [formData, setFormData] = useState({
+const Rooms: React.FC = () => {
+  const [rooms, setRooms] = useState<Salle[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [currentRoom, setCurrentRoom] = useState<Salle | null>(null);
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [formData, setFormData] = useState<{
+    nom: string;
+    capacite: number;
+  }>({
     nom: '',
     capacite: 0,
   });
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleOpenModal = (room: Room | null = null) => {
+  // Charger les salles au montage du composant
+  useEffect(() => {
+    const fetchSalles = async () => {
+      try {
+        setLoading(true);
+        const sallesData = await getSalles();
+        setRooms(sallesData);
+        setLoading(false);
+      } catch (err) {
+        setError('Erreur lors du chargement des salles');
+        setLoading(false);
+        console.error(err);
+      }
+    };
+    fetchSalles();
+  }, []);
+
+  const handleOpenModal = (room: Salle | null = null) => {
     if (room) {
       setFormData({
         nom: room.nom,
@@ -47,40 +66,50 @@ const Rooms = () => {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (currentRoom) {
-      // Update existing room
-      setRooms(rooms.map(r => 
-        r.id === currentRoom.id ? { ...r, ...formData } : r
-      ));
-    } else {
-      // Add new room
-      const newRoom: Room = {
-        id: rooms.length > 0 ? Math.max(...rooms.map(r => r.id)) + 1 : 1,
-        ...formData,
-      };
-      setRooms([...rooms, newRoom]);
+    try {
+      if (currentRoom) {
+        // Mise à jour de la salle
+        await updateSalle(currentRoom.id, formData);
+        setRooms(rooms.map(r => (r.id === currentRoom.id ? { ...r, ...formData } : r)));
+      } else {
+        // Création d'une nouvelle salle
+        const response = await createSalle(formData);
+        setRooms([...rooms, { id: response.id, ...formData }]);
+      }
+      setIsModalOpen(false);
+    } catch (err) {
+      setError(currentRoom ? 'Erreur lors de la mise à jour de la salle' : 'Erreur lors de la création de la salle');
+      console.error(err);
     }
-    setIsModalOpen(false);
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Êtes-vous sûr de vouloir supprimer cette salle ?')) {
-      setRooms(rooms.filter(room => room.id !== id));
+      try {
+        await deleteSalle(id);
+        setRooms(rooms.filter(room => room.id !== id));
+      } catch (err) {
+        setError('Erreur lors de la suppression de la salle');
+        console.error(err);
+      }
     }
   };
 
-  const filteredRooms = rooms.filter(room => 
+  const filteredRooms = rooms.filter(room =>
     room.nom.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  if (loading) return <p>Chargement...</p>;
+  if (error) return <p>{error}</p>;
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Gestion des Salles</h1>
-        <button 
-          onClick={() => handleOpenModal()} 
+        <button
+          onClick={() => handleOpenModal()}
           className="bg-emerald-500 text-white px-4 py-2 rounded-lg flex items-center hover:bg-emerald-600"
         >
           <PlusIcon size={16} className="mr-2" />
@@ -118,14 +147,14 @@ const Rooms = () => {
                 <td className="py-3 px-4 text-sm text-gray-900">{room.nom}</td>
                 <td className="py-3 px-4 text-sm text-gray-900">{room.capacite}</td>
                 <td className="py-3 px-4 text-sm text-gray-900 flex">
-                  <button 
-                    onClick={() => handleOpenModal(room)} 
+                  <button
+                    onClick={() => handleOpenModal(room)}
                     className="text-blue-500 hover:text-blue-700 mr-3"
                   >
                     <PencilIcon size={16} />
                   </button>
-                  <button 
-                    onClick={() => handleDelete(room.id)} 
+                  <button
+                    onClick={() => handleDelete(room.id)}
                     className="text-red-500 hover:text-red-700"
                   >
                     <TrashIcon size={16} />

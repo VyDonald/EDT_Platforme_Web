@@ -4,8 +4,22 @@ import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import {
+  getFilieres,
+  getEnseignants,
+  getCours,
+  getSalles,
+  getEmploisDuTemps,
+  createEmploiDuTemps,
+  updateEmploiDuTemps,
+  deleteEmploiDuTemps,
+  visualiserEmploiDuTemps,
+  createSeance,
+  updateSeance,
+  deleteSeance,
+} from '../../services/api';
 
-// Composant Modal pour les formulaires et boîtes de dialogue
+// Composant Modal (inchangé)
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -15,7 +29,7 @@ interface ModalProps {
 
 const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
   if (!isOpen) return null;
-  
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
       <div className="bg-white rounded-lg shadow-lg w-full max-w-md mx-4">
@@ -25,42 +39,40 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
             ×
           </button>
         </div>
-        <div className="p-4">
-          {children}
-        </div>
+        <div className="p-4">{children}</div>
       </div>
     </div>
   );
 };
 
-// Interface pour les créneaux horaires
+// Interfaces adaptées aux données réelles
 interface TimeSlot {
-  id: number;
+  id: string;
   start: string;
   end: string;
 }
 
-// Interface pour les éléments de l'emploi du temps
 interface ScheduleItem {
-  id: number;
-  day: string;
-  timeSlot: string;
-  course: string;
-  teacher: string;
-  room: string;
+  id: string;
+  emploiDuTempsId: string;
+  coursId: string;
+  enseignantId: string;
+  creneauId: string;
+  date: string;
+  heureDebut: string;
+  heureFin: string;
+  salleID: string;
 }
 
-// Interface pour un emploi du temps complet
 interface ScheduleManager {
-  id: number;
+  id: string;
   title: string;
-  dateRange: [Date | null, Date | null]; // Changé pour stocker une plage de dates
-  section: string;
+  dateRange: [Date | null, Date | null];
+  filiereId: string;
   items: ScheduleItem[];
   createdAt: Date;
 }
 
-// Interface pour les données du formulaire
 interface FormData {
   day: string;
   timeSlot: string;
@@ -69,305 +81,381 @@ interface FormData {
   room: string;
 }
 
-// Interface pour les informations de l'emploi du temps
 interface ScheduleInfo {
   title: string;
-  dateRange: [Date | null, Date | null]; // Changé pour stocker une plage de dates
-  section: string;
+  dateRange: [Date | null, Date | null];
+  filiereId: string;
 }
 
-// Jours de la semaine en français
+interface Cours {
+  id: string;
+  nom: string;
+}
+
+interface Enseignant {
+  id: string;
+  nom: string;
+  prenom: string;
+}
+
+interface Salle {
+  id: string;
+  nom: string;
+}
+
+interface Filiere {
+  id: string;
+  nom: string;
+}
+
+// Jours de la semaine
 const daysOfWeek = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 
-// Créneaux horaires standard
-const timeSlots: TimeSlot[] = [
-  { id: 1, start: '07h30', end: '12h30' },
-  { id: 2, start: '14h00', end: '18h00' }
-];
-
-// Sections disponibles
-const sections = ['MIAGE', 'ABF', 'MID'];
-
-// Listes déroulantes statiques pour enseignants, cours, et salles
-const teachers = [
-  { id: 'utilisateur_2', name: 'Marie Curie' },
-  { id: 'utilisateur_3', name: 'Albert Einstein' },
-  { id: 'utilisateur_4', name: 'Isaac Newton' },
-];
-
-const courses = [
-  { id: 'cours_1', name: 'Algorithmique avancée' },
-  { id: 'cours_2', name: 'Droit constitutionnel' },
-  { id: 'cours_3', name: 'Statistiques' },
-];
-
-const rooms = [
-  { id: 'salle_1', name: 'A101' },
-  { id: 'salle_2', name: 'B205' },
-  { id: 'salle_3', name: 'C303' },
-  { id: 'salle_4', name: 'D104' },
+// Créneaux fixes
+const fixedTimeSlots: TimeSlot[] = [
+  { id: 'seance_1', start: '08h00', end: '12h00' },
+  { id: 'seance_2', start: '14h00', end: '18h00' },
 ];
 
 const Schedule: React.FC = () => {
-  // État pour suivre l'onglet actif
   const [activeTab, setActiveTab] = useState<'create' | 'list'>('create');
-  
-  // État pour la liste des emplois du temps
   const [schedules, setSchedules] = useState<ScheduleManager[]>([]);
-  
-  // État pour l'emploi du temps en cours de création/édition
   const [currentSchedule, setCurrentSchedule] = useState<ScheduleManager>({
-    id: Date.now(),
+    id: '',
     title: '',
     dateRange: [null, null],
-    section: '',
+    filiereId: '',
     items: [],
-    createdAt: new Date()
+    createdAt: new Date(),
   });
-  
-  // États pour les modals
   const [isItemModalOpen, setIsItemModalOpen] = useState<boolean>(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
-  
-  // État pour l'élément en cours d'édition
   const [currentItem, setCurrentItem] = useState<ScheduleItem | null>(null);
-  const [scheduleToDelete, setScheduleToDelete] = useState<number | null>(null);
-  
-  // État pour les données du formulaire
+  const [scheduleToDelete, setScheduleToDelete] = useState<string | null>(null);
   const [formData, setFormData] = useState<FormData>({
     day: '',
     timeSlot: '',
     course: '',
     teacher: '',
-    room: ''
+    room: '',
   });
-  
-  // État pour les informations de l'emploi du temps
   const [scheduleInfo, setScheduleInfo] = useState<ScheduleInfo>({
     title: '',
     dateRange: [null, null],
-    section: ''
+    filiereId: '',
   });
-  
-  // État pour la recherche
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [sectionFilter, setSectionFilter] = useState<string>('');
-  
-  // Référence pour l'exportation PDF
+  const [filiereFilter, setFiliereFilter] = useState<string>('');
+  const [filieres, setFilieres] = useState<Filiere[]>([]);
+  const [teachers, setTeachers] = useState<Enseignant[]>([]);
+  const [courses, setCourses] = useState<Cours[]>([]);
+  const [rooms, setRooms] = useState<Salle[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
   const scheduleRef = useRef<HTMLDivElement>(null);
-  
-  // Charger les emplois du temps depuis le localStorage au démarrage
+
+  // Charger les données initiales
   useEffect(() => {
-    const savedSchedules = localStorage.getItem('schedules');
-    if (savedSchedules) {
+    const fetchInitialData = async () => {
       try {
-        const parsedSchedules = JSON.parse(savedSchedules);
-        setSchedules(parsedSchedules.map((schedule: any) => ({
-          ...schedule,
-          createdAt: new Date(schedule.createdAt),
-          dateRange: [
-            schedule.dateRange[0] ? new Date(schedule.dateRange[0]) : null,
-            schedule.dateRange[1] ? new Date(schedule.dateRange[1]) : null
-          ]
-        })));
-      } catch (e) {
-        console.error('Erreur lors du chargement des emplois du temps:', e);
+        setLoading(true);
+
+        // Charger les filières
+        const filieresData = await getFilieres();
+        setFilieres(filieresData);
+
+        // Charger les enseignants
+        const enseignantsData = await getEnseignants();
+        setTeachers(enseignantsData);
+
+        // Charger les cours
+        const coursData = await getCours();
+        setCourses(coursData);
+
+        // Charger les salles
+        const sallesData = await getSalles();
+        setRooms(sallesData);
+
+        // Charger les emplois du temps
+        const emploisData = await getEmploisDuTemps();
+        const formattedSchedules = await Promise.all(
+          emploisData.map(async (emploi) => {
+            const visualisation = await visualiserEmploiDuTemps(emploi.id);
+            return {
+              id: emploi.id,
+              title: `Emploi du temps ${filieresData.find(f => f.id === emploi.filiereId)?.nom || emploi.filiereId}`,
+              dateRange: [new Date(emploi.dateDebut), new Date(emploi.dateFin)] as [Date, Date],
+              filiereId: emploi.filiereId,
+              items: visualisation.seances,
+              createdAt: emploi.createdAt ? new Date(emploi.createdAt) : new Date(),
+            };
+          })
+        );
+        setSchedules(formattedSchedules);
+
+        setLoading(false);
+      } catch (err) {
+        setError('Erreur lors du chargement des données : ' + (err.response?.data?.message || err.message));
+        setLoading(false);
+        console.error(err);
       }
-    }
+    };
+    fetchInitialData();
   }, []);
-  
-  // Sauvegarder les emplois du temps dans le localStorage à chaque modification
-  useEffect(() => {
-    localStorage.setItem('schedules', JSON.stringify(schedules));
-  }, [schedules]);
-  
+
   // Fonctions pour gérer les éléments de l'emploi du temps
-  const handleAddItem = () => {
+  const handleAddItem = (day: string, timeSlot: string) => {
     setCurrentItem(null);
     setFormData({
-      day: '',
-      timeSlot: '',
+      day,
+      timeSlot,
       course: '',
       teacher: '',
-      room: ''
+      room: '',
     });
     setIsItemModalOpen(true);
   };
-  
+
   const handleEditItem = (item: ScheduleItem) => {
     setCurrentItem(item);
     setFormData({
-      day: item.day,
-      timeSlot: item.timeSlot,
-      course: item.course,
-      teacher: item.teacher,
-      room: item.room
+      day: daysOfWeek[new Date(item.date).getDay() - 1] || '',
+      timeSlot: `${item.heureDebut}-${item.heureFin}`,
+      course: item.coursId,
+      teacher: item.enseignantId,
+      room: item.salleID,
     });
     setIsItemModalOpen(true);
   };
-  
-  const handleDeleteItem = (itemId: number) => {
-    setCurrentSchedule({
-      ...currentSchedule,
-      items: currentSchedule.items.filter(item => item.id !== itemId)
-    });
-  };
-  
-  const handleItemSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (currentItem) {
-      // Mise à jour d'un élément existant
+
+  const handleDeleteItem = async (itemId: string) => {
+    try {
+      await deleteSeance(itemId);
       setCurrentSchedule({
         ...currentSchedule,
-        items: currentSchedule.items.map(item => 
-          item.id === currentItem.id 
-            ? { ...item, ...formData } 
-            : item
-        )
+        items: currentSchedule.items.filter(item => item.id !== itemId),
       });
-    } else {
-      // Ajout d'un nouvel élément
-      const newItem: ScheduleItem = {
-        id: Date.now(),
-        ...formData
-      };
-      setCurrentSchedule({
-        ...currentSchedule,
-        items: [...currentSchedule.items, newItem]
-      });
+    } catch (err) {
+      setError('Erreur lors de la suppression de la séance');
+      console.error(err);
     }
-    
-    setIsItemModalOpen(false);
   };
+
+  const handleItemSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
   
+    try {
+      const [heureDebut, heureFin] = formData.timeSlot.split('-');
+      const selectedCreneau = fixedTimeSlots.find(ts => `${ts.start}-${ts.end}` === formData.timeSlot);
+      const selectedDayIndex = daysOfWeek.indexOf(formData.day);
+      const baseDate = currentSchedule.dateRange[0] || new Date();
+      const seanceDate = new Date(baseDate);
+      seanceDate.setDate(baseDate.getDate() + selectedDayIndex);
+  
+      const seanceData: Omit<ScheduleItem, 'id'> = {
+        emploiDuTempsId: currentSchedule.id,
+        coursId: formData.course,
+        enseignantId: formData.teacher,
+        creneauId: selectedCreneau?.id || '',
+        date: seanceDate.toISOString().split('T')[0],
+        heureDebut,
+        heureFin,
+        salleID: formData.room,
+      };
+  
+      console.log('Données envoyées pour la séance :', seanceData);
+  
+      if (currentItem) {
+        await updateSeance(currentItem.id, seanceData);
+        setCurrentSchedule({
+          ...currentSchedule,
+          items: currentSchedule.items.map(item =>
+            item.id === currentItem.id ? { ...item, ...seanceData } : item
+          ),
+        });
+      } else {
+        const response = await createSeance(seanceData);
+        setCurrentSchedule({
+          ...currentSchedule,
+          items: [...currentSchedule.items, { id: response.id, ...seanceData }],
+        });
+      }
+  
+      setIsItemModalOpen(false);
+    } catch (err) {
+      console.error('Erreur lors de la création de la séance :', err.response?.data || err.message);
+      setError('Erreur lors de la gestion de la séance : ' + (err.response?.data?.message || err.message));
+    }
+  };
+
   // Fonctions pour gérer les emplois du temps
   const createNewSchedule = () => {
     setScheduleInfo({
       title: '',
       dateRange: [null, null],
-      section: ''
+      filiereId: '',
     });
     setCurrentSchedule({
-      id: Date.now(),
+      id: '',
       title: '',
       dateRange: [null, null],
-      section: '',
+      filiereId: '',
       items: [],
-      createdAt: new Date()
+      createdAt: new Date(),
     });
     setIsScheduleModalOpen(true);
   };
-  
-  const handleScheduleSubmit = (e: React.FormEvent) => {
+
+  const handleScheduleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Mettre à jour l'emploi du temps en cours avec les nouvelles informations
-    const updatedSchedule: ScheduleManager = {
-      ...currentSchedule,
-      title: scheduleInfo.title,
-      dateRange: scheduleInfo.dateRange,
-      section: scheduleInfo.section
-    };
-    
-    setCurrentSchedule(updatedSchedule);
-    setIsScheduleModalOpen(false);
-    setActiveTab('create');
-  };
   
-  const saveSchedule = () => {
-    // Vérifier si l'emploi du temps a un titre et une période
+    try {
+      const emploiDuTempsData = {
+        filiereId: scheduleInfo.filiereId,
+        dateDebut: scheduleInfo.dateRange[0]?.toISOString().split('T')[0] || '',
+        dateFin: scheduleInfo.dateRange[1]?.toISOString().split('T')[0] || '',
+      };
+  
+      console.log('Données envoyées pour l\'emploi du temps :', emploiDuTempsData);
+  
+      if (currentSchedule.id) {
+        await updateEmploiDuTemps(currentSchedule.id, emploiDuTempsData);
+        setCurrentSchedule({
+          ...currentSchedule,
+          title: scheduleInfo.title,
+          dateRange: scheduleInfo.dateRange,
+          filiereId: scheduleInfo.filiereId,
+        });
+      } else {
+        const response = await createEmploiDuTemps(emploiDuTempsData);
+        console.log('Réponse de l\'API :', response);
+        setCurrentSchedule({
+          id: response.id,
+          title: scheduleInfo.title,
+          dateRange: scheduleInfo.dateRange,
+          filiereId: scheduleInfo.filiereId,
+          items: [],
+          createdAt: new Date(),
+        });
+      }
+  
+      setIsScheduleModalOpen(false);
+      setActiveTab('create');
+    } catch (err) {
+      console.error('Erreur lors de la création de l\'emploi du temps :', err.response?.data || err.message);
+      setError('Erreur lors de la création/mise à jour de l\'emploi du temps : ' + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const saveSchedule = async () => {
     if (!currentSchedule.title || !currentSchedule.dateRange[0] || !currentSchedule.dateRange[1]) {
-      alert("Veuillez créer un emploi du temps en définissant un titre, une période et une section");
+      alert('Veuillez définir un titre, une période et une filière');
       setIsScheduleModalOpen(true);
       return;
     }
-    
-    // Vérifier si l'emploi du temps existe déjà (mise à jour ou création)
-    const existingIndex = schedules.findIndex(s => s.id === currentSchedule.id);
-    
-    if (existingIndex >= 0) {
-      // Mise à jour d'un emploi du temps existant
-      const updatedSchedules = [...schedules];
-      updatedSchedules[existingIndex] = currentSchedule;
-      setSchedules(updatedSchedules);
-    } else {
-      // Ajout d'un nouvel emploi du temps
-      setSchedules([...schedules, currentSchedule]);
+
+    try {
+      const existingIndex = schedules.findIndex(s => s.id === currentSchedule.id);
+      if (existingIndex >= 0) {
+        const updatedSchedules = [...schedules];
+        updatedSchedules[existingIndex] = currentSchedule;
+        setSchedules(updatedSchedules);
+      } else {
+        setSchedules([...schedules, currentSchedule]);
+      }
+
+      setCurrentSchedule({
+        id: '',
+        title: '',
+        dateRange: [null, null],
+        filiereId: '',
+        items: [],
+        createdAt: new Date(),
+      });
+      setScheduleInfo({
+        title: '',
+        dateRange: [null, null],
+        filiereId: '',
+      });
+      setActiveTab('list');
+    } catch (err) {
+      setError('Erreur lors de l\'enregistrement de l\'emploi du temps');
+      console.error(err);
     }
-    
-    // Réinitialiser l'emploi du temps en cours
-    setCurrentSchedule({
-      id: Date.now(),
-      title: '',
-      dateRange: [null, null],
-      section: '',
-      items: [],
-      createdAt: new Date()
-    });
-    
-    setScheduleInfo({
-      title: '',
-      dateRange: [null, null],
-      section: ''
-    });
-    
-    setActiveTab('list');
   };
-  
-  const loadSchedule = (schedule: ScheduleManager) => {
-    setCurrentSchedule(schedule);
-    setScheduleInfo({
-      title: schedule.title,
-      dateRange: schedule.dateRange,
-      section: schedule.section
-    });
-    setActiveTab('create');
+
+  const loadSchedule = async (schedule: ScheduleManager) => {
+    try {
+      const visualisation = await visualiserEmploiDuTemps(schedule.id);
+      setCurrentSchedule({
+        ...schedule,
+        items: visualisation.seances,
+      });
+      setScheduleInfo({
+        title: schedule.title,
+        dateRange: schedule.dateRange,
+        filiereId: schedule.filiereId,
+      });
+      setActiveTab('create');
+    } catch (err) {
+      setError('Erreur lors du chargement de l\'emploi du temps');
+      console.error(err);
+    }
   };
-  
-  const confirmDeleteSchedule = (scheduleId: number) => {
+
+  const confirmDeleteSchedule = (scheduleId: string) => {
     setScheduleToDelete(scheduleId);
     setIsDeleteModalOpen(true);
   };
-  
-  const deleteSchedule = () => {
+
+  const deleteSchedule = async () => {
     if (scheduleToDelete) {
-      setSchedules(schedules.filter(schedule => schedule.id !== scheduleToDelete));
-      setIsDeleteModalOpen(false);
-      setScheduleToDelete(null);
+      try {
+        await deleteEmploiDuTemps(scheduleToDelete);
+        setSchedules(schedules.filter(schedule => schedule.id !== scheduleToDelete));
+        setIsDeleteModalOpen(false);
+        setScheduleToDelete(null);
+      } catch (err) {
+        setError('Erreur lors de la suppression de l\'emploi du temps');
+        console.error(err);
+      }
     }
   };
-  
-  // Formatter la période pour l'affichage
+
   const formatDateRange = (range: [Date | null, Date | null]): string => {
     if (!range[0] || !range[1]) return '';
     return `Du ${range[0].toLocaleDateString('fr-FR')} au ${range[1].toLocaleDateString('fr-FR')}`;
   };
-  
-  // Filtrer les emplois du temps selon les critères de recherche
+
   const filteredSchedules = schedules.filter(schedule => {
-    const matchesSearchTerm = 
+    const matchesSearchTerm =
       schedule.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       formatDateRange(schedule.dateRange).toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesSection = sectionFilter ? schedule.section === sectionFilter : true;
-    
-    return matchesSearchTerm && matchesSection;
+
+    const matchesFiliere = filiereFilter ? schedule.filiereId === filiereFilter : true;
+
+    return matchesSearchTerm && matchesFiliere;
   });
-  
-  // Obtenir un élément de l'emploi du temps pour un jour et un créneau horaire spécifique
+
   const getScheduleForSlot = (day: string, timeSlot: string): ScheduleItem | undefined => {
-    return currentSchedule.items.find(item => 
-      item.day === day && 
-      (item.timeSlot === timeSlot || item.timeSlot.includes(timeSlot.split('-')[0]))
+    const [heureDebut, heureFin] = timeSlot.split('-');
+    const dayIndex = daysOfWeek.indexOf(day);
+    const baseDate = currentSchedule.dateRange[0];
+    if (!baseDate) return undefined;
+    const targetDate = new Date(baseDate);
+    targetDate.setDate(baseDate.getDate() + dayIndex);
+    const formattedDate = targetDate.toISOString().split('T')[0];
+
+    return currentSchedule.items.find(item =>
+      item.date === formattedDate &&
+      item.heureDebut === heureDebut &&
+      item.heureFin === heureFin
     );
   };
-  
-  // Gérer l'exportation PDF
+
   const exportPDF = async () => {
     if (scheduleRef.current) {
-      // Ajouter l'en-tête de l'institution avant l'exportation
       const headerDiv = document.createElement('div');
       headerDiv.innerHTML = `
         <div style="text-align: center; margin-bottom: 20px;">
@@ -382,21 +470,16 @@ const Schedule: React.FC = () => {
         const canvas = await html2canvas(scheduleRef.current, {
           scale: 2,
           backgroundColor: null,
-          logging: false
+          logging: false,
         });
-        
-        // Supprimer l'en-tête temporaire après la capture du canvas
         scheduleRef.current.removeChild(headerDiv);
-        
         const imgData = canvas.toDataURL('image/png');
         const pdf = new jsPDF({
           orientation: 'landscape',
-          unit: 'mm'
+          unit: 'mm',
         });
-        
         const imgWidth = 280;
         const imgHeight = (canvas.height * imgWidth) / canvas.width;
-        
         pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
         pdf.save(`Emploi_du_temps_${currentSchedule.title.replace(/\s/g, '_')}.pdf`);
       } catch (error) {
@@ -406,12 +489,14 @@ const Schedule: React.FC = () => {
     }
   };
 
+  if (loading) return <p>Chargement...</p>;
+  if (error) return <p>{error}</p>;
+
   return (
     <div className="space-y-4 p-4 bg-gray-50 min-h-screen">
-      {/* Onglets */}
       <div className="flex border-b">
-        <button 
-          onClick={() => setActiveTab('create')} 
+        <button
+          onClick={() => setActiveTab('create')}
           className={`px-4 py-2 font-medium ${activeTab === 'create' ? 'border-b-2 border-emerald-500 text-emerald-600' : 'text-gray-500'}`}
         >
           <div className="flex items-center">
@@ -419,8 +504,8 @@ const Schedule: React.FC = () => {
             Emploi du Temps
           </div>
         </button>
-        <button 
-          onClick={() => setActiveTab('list')} 
+        <button
+          onClick={() => setActiveTab('list')}
           className={`px-4 py-2 font-medium ${activeTab === 'list' ? 'border-b-2 border-emerald-500 text-emerald-600' : 'text-gray-500'}`}
         >
           <div className="flex items-center">
@@ -429,22 +514,20 @@ const Schedule: React.FC = () => {
           </div>
         </button>
       </div>
-      
-      {/* Contenu de l'onglet "Emploi du Temps" */}
+
       {activeTab === 'create' && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <div className="flex space-x-2">
-              <button 
-                onClick={createNewSchedule} 
+              <button
+                onClick={createNewSchedule}
                 className="bg-emerald-500 text-white px-4 py-2 rounded flex items-center hover:bg-emerald-600"
               >
                 <PlusIcon className="mr-2" size={16} />
                 {currentSchedule.title ? 'Modifier les infos' : 'Créer un nouvel emploi du temps'}
               </button>
-              
-              <button 
-                onClick={saveSchedule} 
+              <button
+                onClick={saveSchedule}
                 className="bg-blue-500 text-white px-4 py-2 rounded flex items-center hover:bg-blue-600"
               >
                 <DownloadIcon className="mr-2" size={16} />
@@ -452,16 +535,16 @@ const Schedule: React.FC = () => {
               </button>
             </div>
             <div className="space-x-2">
-              <button 
-                onClick={handleAddItem} 
+              <button
+                onClick={() => handleAddItem(formData.day || daysOfWeek[0], formData.timeSlot || `${fixedTimeSlots[0].start}-${fixedTimeSlots[0].end}`)}
                 className="bg-blue-500 text-white px-4 py-2 rounded flex items-center hover:bg-blue-600"
                 disabled={!currentSchedule.title}
               >
                 <PlusIcon className="mr-2" size={16} />
                 Ajouter une séance
               </button>
-              <button 
-                onClick={exportPDF} 
+              <button
+                onClick={exportPDF}
                 className="bg-purple-500 text-white px-4 py-2 rounded flex items-center hover:bg-purple-600"
                 disabled={!currentSchedule.title}
               >
@@ -470,12 +553,12 @@ const Schedule: React.FC = () => {
               </button>
             </div>
           </div>
-          
+
           {!currentSchedule.title ? (
             <div className="bg-white p-8 rounded-lg shadow text-center">
               <p className="text-gray-500 mb-4">Veuillez créer un nouvel emploi du temps ou en sélectionner un existant.</p>
-              <button 
-                onClick={createNewSchedule} 
+              <button
+                onClick={createNewSchedule}
                 className="bg-emerald-500 text-white px-4 py-2 rounded inline-flex items-center hover:bg-emerald-600"
               >
                 <PlusIcon className="mr-2" size={16} />
@@ -488,10 +571,10 @@ const Schedule: React.FC = () => {
                 <h1 className="text-2xl font-bold uppercase">{currentSchedule.title}</h1>
                 <p className="text-md mt-1">({formatDateRange(currentSchedule.dateRange)})</p>
                 <p className="text-sm mt-1 bg-emerald-100 text-emerald-700 px-2 py-1 rounded inline-block">
-                  Section: {currentSchedule.section}
+                  Filière: {filieres.find(f => f.id === currentSchedule.filiereId)?.nom || currentSchedule.filiereId}
                 </p>
               </div>
-              
+
               <div className="bg-white rounded-lg overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
@@ -505,7 +588,7 @@ const Schedule: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {timeSlots.map(slot => (
+                    {fixedTimeSlots.map(slot => (
                       <tr key={slot.id}>
                         <td className="border p-2 font-medium bg-gray-100 text-center whitespace-nowrap">
                           {slot.start} - {slot.end}
@@ -518,32 +601,32 @@ const Schedule: React.FC = () => {
                               {scheduleItem ? (
                                 <div className="bg-gray-100 p-2 rounded h-full relative group">
                                   <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button 
-                                      onClick={() => handleEditItem(scheduleItem)} 
+                                    <button
+                                      onClick={() => handleEditItem(scheduleItem)}
                                       className="p-1 text-blue-600 hover:bg-blue-100 rounded mr-1"
                                     >
                                       <PencilIcon size={16} />
                                     </button>
-                                    <button 
-                                      onClick={() => handleDeleteItem(scheduleItem.id)} 
+                                    <button
+                                      onClick={() => handleDeleteItem(scheduleItem.id)}
                                       className="p-1 text-red-600 hover:bg-red-100 rounded"
                                     >
                                       <TrashIcon size={16} />
                                     </button>
                                   </div>
                                   <div className="font-medium text-center">
-                                    {scheduleItem.course}
+                                    {courses.find(c => c.id === scheduleItem.coursId)?.nom || scheduleItem.coursId}
                                   </div>
                                   <div className="text-sm text-gray-600 text-center">
-                                    {scheduleItem.teacher}
+                                    {teachers.find(t => t.id === scheduleItem.enseignantId)?.nom || scheduleItem.enseignantId} {teachers.find(t => t.id === scheduleItem.enseignantId)?.prenom}
                                   </div>
                                   <div className="text-xs text-gray-500 text-center">
-                                    ({scheduleItem.room})
+                                    ({rooms.find(r => r.id === scheduleItem.salleID)?.nom || scheduleItem.salleID})
                                   </div>
                                 </div>
                               ) : (
-                                <button 
-                                  onClick={handleAddItem} 
+                                <button
+                                  onClick={() => handleAddItem(day, timeSlotStr)}
                                   className="w-full h-full flex items-center justify-center text-gray-400 hover:bg-gray-50"
                                 >
                                   <PlusIcon size={20} />
@@ -561,56 +644,54 @@ const Schedule: React.FC = () => {
           )}
         </div>
       )}
-      
-      {/* Contenu de l'onglet "Liste des Emplois du Temps" */}
+
       {activeTab === 'list' && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-bold">Liste des Emplois du Temps</h2>
-            <button 
-              onClick={createNewSchedule} 
+            <button
+              onClick={createNewSchedule}
               className="bg-emerald-500 text-white px-4 py-2 rounded flex items-center hover:bg-emerald-600"
             >
               <PlusIcon className="mr-2" size={16} />
               Créer un nouvel emploi
             </button>
           </div>
-          
-          {/* Filtres de recherche */}
+
           <div className="bg-white p-4 rounded-lg shadow">
             <div className="flex flex-col md:flex-row md:items-center space-y-2 md:space-y-0 md:space-x-4">
               <div className="flex-1">
                 <div className="relative">
-                  <input 
-                    type="text" 
-                    value={searchTerm} 
-                    onChange={(e) => setSearchTerm(e.target.value)} 
-                    placeholder="Rechercher un emploi du temps..." 
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Rechercher un emploi du temps..."
                     className="w-full p-2 pl-8 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
                   <SearchIcon size={16} className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" />
                 </div>
               </div>
               <div>
-                <select 
-                  value={sectionFilter} 
-                  onChange={(e) => setSectionFilter(e.target.value)} 
+                <select
+                  value={filiereFilter}
+                  onChange={(e) => setFiliereFilter(e.target.value)}
                   className="w-full md:w-auto p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 >
-                  <option value="">Toutes les sections</option>
-                  {sections.map(section => (
-                    <option key={section} value={section}>{section}</option>
+                  <option value="">Toutes les filières</option>
+                  {filieres.map(filiere => (
+                    <option key={filiere.id} value={filiere.id}>{filiere.nom}</option>
                   ))}
                 </select>
               </div>
             </div>
           </div>
-          
+
           {schedules.length === 0 ? (
             <div className="bg-white p-8 rounded-lg shadow text-center">
               <p className="text-gray-500 mb-4">Aucun emploi du temps n'a été créé.</p>
-              <button 
-                onClick={createNewSchedule} 
+              <button
+                onClick={createNewSchedule}
                 className="bg-emerald-500 text-white px-4 py-2 rounded inline-flex items-center hover:bg-emerald-600"
               >
                 <PlusIcon className="mr-2" size={16} />
@@ -628,15 +709,15 @@ const Schedule: React.FC = () => {
                   <div className="mb-3">
                     <div className="flex items-center justify-between">
                       <h3 className="font-bold text-lg">{schedule.title}</h3>
-                      {schedule.section && (
+                      {schedule.filiereId && (
                         <span className="bg-emerald-100 text-emerald-700 text-xs px-2 py-1 rounded">
-                          {schedule.section}
+                          {filieres.find(f => f.id === schedule.filiereId)?.nom || schedule.filiereId}
                         </span>
                       )}
                     </div>
                     <p className="text-sm text-gray-500 mt-1">{formatDateRange(schedule.dateRange)}</p>
                     <p className="text-xs text-gray-400 mt-1">
-                      Créé le {new Date(schedule.createdAt).toLocaleDateString()}
+                      Créé le {schedule.createdAt.toLocaleDateString()}
                     </p>
                   </div>
                   <div className="flex justify-between mt-4">
@@ -646,15 +727,15 @@ const Schedule: React.FC = () => {
                       </span>
                     </div>
                     <div className="space-x-1">
-                      <button 
-                        onClick={() => loadSchedule(schedule)} 
+                      <button
+                        onClick={() => loadSchedule(schedule)}
                         className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
                         title="Éditer"
                       >
                         <PencilIcon size={16} />
                       </button>
-                      <button 
-                        onClick={() => confirmDeleteSchedule(schedule.id)} 
+                      <button
+                        onClick={() => confirmDeleteSchedule(schedule.id)}
                         className="bg-red-500 text-white p-2 rounded hover:bg-red-600"
                         title="Supprimer"
                       >
@@ -668,22 +749,19 @@ const Schedule: React.FC = () => {
           )}
         </div>
       )}
-      
-      {/* Modal pour ajouter/modifier une séance */}
-      <Modal 
-        isOpen={isItemModalOpen} 
-        onClose={() => setIsItemModalOpen(false)} 
+
+      <Modal
+        isOpen={isItemModalOpen}
+        onClose={() => setIsItemModalOpen(false)}
         title={currentItem ? 'Modifier une séance' : 'Ajouter une séance'}
       >
         <form onSubmit={handleItemSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Jour
-            </label>
-            <select 
-              value={formData.day} 
-              onChange={(e) => setFormData({...formData, day: e.target.value})} 
-              className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+            <label className="block text-sm font-medium text-gray-700 mb-1">Jour</label>
+            <select
+              value={formData.day}
+              onChange={(e) => setFormData({ ...formData, day: e.target.value })}
+              className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500"
               required
             >
               <option value="">Sélectionnez un jour</option>
@@ -692,87 +770,79 @@ const Schedule: React.FC = () => {
               ))}
             </select>
           </div>
-          
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Créneau horaire
-            </label>
-            <select 
-              value={formData.timeSlot} 
-              onChange={(e) => setFormData({...formData, timeSlot: e.target.value})} 
-              className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+            <label className="block text-sm font-medium text-gray-700 mb-1">Créneau horaire</label>
+            <select
+              value={formData.timeSlot}
+              onChange={(e) => setFormData({ ...formData, timeSlot: e.target.value })}
+              className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500"
               required
             >
               <option value="">Sélectionnez un créneau</option>
-              {timeSlots.map(slot => (
+              {fixedTimeSlots.map(slot => (
                 <option key={slot.id} value={`${slot.start}-${slot.end}`}>
                   {slot.start} - {slot.end}
                 </option>
               ))}
             </select>
           </div>
-          
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Cours
-            </label>
-            <select 
-              value={formData.course} 
-              onChange={(e) => setFormData({...formData, course: e.target.value})} 
-              className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+            <label className="block text-sm font-medium text-gray-700 mb-1">Cours</label>
+            <select
+              value={formData.course}
+              onChange={(e) => setFormData({ ...formData, course: e.target.value })}
+              className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500"
               required
             >
               <option value="">Sélectionnez un cours</option>
               {courses.map(course => (
-                <option key={course.id} value={course.name}>{course.name}</option>
+                <option key={course.id} value={course.id}>{course.nom}</option>
               ))}
             </select>
           </div>
-          
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Enseignant
-            </label>
-            <select 
-              value={formData.teacher} 
-              onChange={(e) => setFormData({...formData, teacher: e.target.value})} 
-              className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+            <label className="block text-sm font-medium text-gray-700 mb-1">Enseignant</label>
+            <select
+              value={formData.teacher}
+              onChange={(e) => setFormData({ ...formData, teacher: e.target.value })}
+              className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500"
               required
             >
               <option value="">Sélectionnez un enseignant</option>
               {teachers.map(teacher => (
-                <option key={teacher.id} value={teacher.name}>{teacher.name}</option>
+                <option key={teacher.id} value={teacher.id}>{teacher.nom} {teacher.prenom}</option>
               ))}
             </select>
           </div>
-          
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Salle
-            </label>
-            <select 
-              value={formData.room} 
-              onChange={(e) => setFormData({...formData, room: e.target.value})} 
-              className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+            <label className="block text-sm font-medium text-gray-700 mb-1">Salle</label>
+            <select
+              value={formData.room}
+              onChange={(e) => setFormData({ ...formData, room: e.target.value })}
+              className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500"
               required
             >
               <option value="">Sélectionnez une salle</option>
               {rooms.map(room => (
-                <option key={room.id} value={room.name}>{room.name}</option>
+                <option key={room.id} value={room.id}>{room.nom}</option>
               ))}
             </select>
           </div>
-          
+
           <div className="flex justify-end space-x-2">
-            <button 
-              type="button" 
-              onClick={() => setIsItemModalOpen(false)} 
+            <button
+              type="button"
+              onClick={() => setIsItemModalOpen(false)}
               className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
             >
               Annuler
             </button>
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               className="px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600"
             >
               {currentItem ? 'Modifier' : 'Ajouter'}
@@ -780,56 +850,51 @@ const Schedule: React.FC = () => {
           </div>
         </form>
       </Modal>
-      
-      {/* Modal pour créer un nouvel emploi du temps */}
-      <Modal 
-        isOpen={isScheduleModalOpen} 
-        onClose={() => setIsScheduleModalOpen(false)} 
+
+      <Modal
+        isOpen={isScheduleModalOpen}
+        onClose={() => setIsScheduleModalOpen(false)}
         title="Informations de l'emploi du temps"
       >
         <form onSubmit={handleScheduleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Titre de l'emploi du temps
-            </label>
-            <input 
-              type="text" 
-              value={scheduleInfo.title} 
-              onChange={(e) => setScheduleInfo({...scheduleInfo, title: e.target.value})} 
+            <label className="block text-sm font-medium text-gray-700 mb-1">Titre de l'emploi du temps</label>
+            <input
+              type="text"
+              value={scheduleInfo.title}
+              onChange={(e) => setScheduleInfo({ ...scheduleInfo, title: e.target.value })}
               placeholder="Ex: SECTION MIAGE 6ième SEMESTRE LICENCE 3"
-              className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500" 
-              required 
+              className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              required
             />
           </div>
-          
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Section
-            </label>
-            <select 
-              value={scheduleInfo.section} 
-              onChange={(e) => setScheduleInfo({...scheduleInfo, section: e.target.value})} 
-              className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+            <label className="block text-sm font-medium text-gray-700 mb-1">Filière</label>
+            <select
+              value={scheduleInfo.filiereId}
+              onChange={(e) => setScheduleInfo({ ...scheduleInfo, filiereId: e.target.value })}
+              className="w-full p-2 border rounded focus:outline-none focus:ring-1 focus:ring-emerald-500"
               required
             >
-              <option value="">Sélectionnez une section</option>
-              {sections.map(section => (
-                <option key={section} value={section}>{section}</option>
+              <option value="">Sélectionnez une filière</option>
+              {filieres.map(filiere => (
+                <option key={filiere.id} value={filiere.id}>{filiere.nom}</option>
               ))}
             </select>
           </div>
-          
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Période
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Période</label>
             <div className="flex space-x-2">
               <DatePicker
                 selected={scheduleInfo.dateRange[0]}
-                onChange={(date: Date) => setScheduleInfo({
-                  ...scheduleInfo,
-                  dateRange: [date, scheduleInfo.dateRange[1]]
-                })}
+                onChange={(date: Date) =>
+                  setScheduleInfo({
+                    ...scheduleInfo,
+                    dateRange: [date, scheduleInfo.dateRange[1]],
+                  })
+                }
                 selectsStart
                 startDate={scheduleInfo.dateRange[0] || undefined}
                 endDate={scheduleInfo.dateRange[1] || undefined}
@@ -840,10 +905,12 @@ const Schedule: React.FC = () => {
               />
               <DatePicker
                 selected={scheduleInfo.dateRange[1]}
-                onChange={(date: Date) => setScheduleInfo({
-                  ...scheduleInfo,
-                  dateRange: [scheduleInfo.dateRange[0], date]
-                })}
+                onChange={(date: Date) =>
+                  setScheduleInfo({
+                    ...scheduleInfo,
+                    dateRange: [scheduleInfo.dateRange[0], date],
+                  })
+                }
                 selectsEnd
                 startDate={scheduleInfo.dateRange[0] || undefined}
                 endDate={scheduleInfo.dateRange[1] || undefined}
@@ -855,17 +922,17 @@ const Schedule: React.FC = () => {
               />
             </div>
           </div>
-          
+
           <div className="flex justify-end space-x-2">
-            <button 
-              type="button" 
-              onClick={() => setIsScheduleModalOpen(false)} 
+            <button
+              type="button"
+              onClick={() => setIsScheduleModalOpen(false)}
               className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
             >
               Annuler
             </button>
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               className="px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600"
             >
               Confirmer
@@ -873,25 +940,23 @@ const Schedule: React.FC = () => {
           </div>
         </form>
       </Modal>
-      
-      {/* Modal de confirmation de suppression */}
-      <Modal 
-        isOpen={isDeleteModalOpen} 
-        onClose={() => setIsDeleteModalOpen(false)} 
+
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
         title="Confirmation de suppression"
       >
         <div className="space-y-4">
           <p>Êtes-vous sûr de vouloir supprimer cet emploi du temps ? Cette action est irréversible.</p>
-          
           <div className="flex justify-end space-x-2">
-            <button 
-              onClick={() => setIsDeleteModalOpen(false)} 
+            <button
+              onClick={() => setIsDeleteModalOpen(false)}
               className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
             >
               Annuler
             </button>
-            <button 
-              onClick={deleteSchedule} 
+            <button
+              onClick={deleteSchedule}
               className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
             >
               Supprimer

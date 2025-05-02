@@ -1,82 +1,87 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import CrudTable from '../shared/CrudTable';
 import Modal from '../shared/Modal';
+import {
+  getCours,
+  createCours,
+  updateCours,
+  deleteCours,
+  getEnseignants,
+  getStatuts,
+} from '../../services/api';
 
-// Liste des enseignants pour le menu déroulant
-const enseignants = [
-  { id: 'utilisateur_1', nom: 'Jean Dupont' },
-  { id: 'utilisateur_2', nom: 'Marie Curie' },
-  { id: 'utilisateur_3', nom: 'Pierre Martin' },
-];
+// Types pour les données
+interface Cours {
+  id: string;
+  nom: string;
+  capacite: number;
+  description: string;
+  enseignantId: string;
+  statutId: string;
+}
 
-// Liste des statuts pour le menu déroulant
-const statuts = [
-  { id: 'en_attente', label: 'En attente' },
-  { id: 'validé', label: 'Validé' },
-  { id: 'annulé', label: 'Annulé' },
-];
+interface Enseignant {
+  id: string;
+  nom: string;
+  prenom: string;
+}
 
-const initialCourses = [
-  {
-    id: 1,
-    nom: 'Algorithmique avancée',
-    capacite: 30,
-    description: 'Cours sur les algorithmes avancés',
-    enseignantId: 'utilisateur_2',
-    statutId: 'en_attente',
-  },
-  {
-    id: 2,
-    nom: 'Droit constitutionnel',
-    capacite: 25,
-    description: 'Introduction au droit constitutionnel',
-    enseignantId: 'utilisateur_2',
-    statutId: 'validé',
-  },
-  {
-    id: 3,
-    nom: 'Statistiques',
-    capacite: 40,
-    description: 'Fondamentaux des statistiques',
-    enseignantId: 'utilisateur_2',
-    statutId: 'en_attente',
-  },
-];
+interface Statut {
+  id: string;
+  nom: string;
+}
 
-const Courses = () => {
-  const [courses, setCourses] = useState(initialCourses);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [currentCourse, setCurrentCourse] = useState(null);
-  const [formData, setFormData] = useState({
+const Courses: React.FC = () => {
+  const [courses, setCourses] = useState<Cours[]>([]);
+  const [enseignants, setEnseignants] = useState<Enseignant[]>([]);
+  const [statuts, setStatuts] = useState<Statut[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [currentCourse, setCurrentCourse] = useState<Cours | null>(null);
+  const [formData, setFormData] = useState<{
+    nom: string;
+    capacite: number;
+    description: string;
+    enseignantId: string;
+    statutId: string;
+  }>({
     nom: '',
     capacite: 0,
     description: '',
     enseignantId: '',
     statutId: '',
   });
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   const columns = [
-    {
-      header: 'Nom',
-      accessor: 'nom',
-    },
-    {
-      header: 'Capacité',
-      accessor: 'capacite',
-    },
-    {
-      header: 'Description',
-      accessor: 'description',
-    },
-    {
-      header: 'Enseignant ID',
-      accessor: 'enseignantId',
-    },
-    {
-      header: 'Statut ID',
-      accessor: 'statutId',
-    },
+    { header: 'Nom', accessor: 'nom' },
+    { header: 'Capacité', accessor: 'capacite' },
+    { header: 'Description', accessor: 'description' },
+    { header: 'Enseignant ID', accessor: 'enseignantId' },
+    { header: 'Statut ID', accessor: 'statutId' },
   ];
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [coursData, enseignantsData, statutsData] = await Promise.all([
+          getCours(),
+          getEnseignants(),
+          getStatuts(),
+        ]);
+        setCourses(coursData);
+        setEnseignants(enseignantsData);
+        setStatuts(statutsData);
+        setLoading(false);
+      } catch (err) {
+        setError('Erreur lors du chargement des données');
+        setLoading(false);
+        console.error(err);
+      }
+    };
+    fetchData();
+  }, []);
 
   const handleAdd = () => {
     setCurrentCourse(null);
@@ -90,7 +95,7 @@ const Courses = () => {
     setIsModalOpen(true);
   };
 
-  const handleEdit = (course) => {
+  const handleEdit = (course: Cours) => {
     setCurrentCourse(course);
     setFormData({
       nom: course.nom,
@@ -102,31 +107,43 @@ const Courses = () => {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (course) => {
-    setCourses(courses.filter(c => c.id !== course.id));
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (currentCourse) {
-      setCourses(courses.map(c => (c.id === currentCourse.id ? { ...c, ...formData } : c)));
-    } else {
-      const newCourse = {
-        id: Date.now(),
-        ...formData,
-      };
-      setCourses([...courses, newCourse]);
+  const handleDelete = async (course: Cours) => {
+    try {
+      await deleteCours(course.id);
+      setCourses(courses.filter(c => c.id !== course.id));
+    } catch (err) {
+      setError('Erreur lors de la suppression du cours');
+      console.error(err);
     }
-    setIsModalOpen(false);
   };
 
-  const handleChange = (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    try {
+      if (currentCourse) {
+        await updateCours(currentCourse.id, formData);
+        setCourses(courses.map(c => (c.id === currentCourse.id ? { ...c, ...formData } : c)));
+      } else {
+        const response = await createCours(formData);
+        setCourses([...courses, { id: response.id, ...formData }]);
+      }
+      setIsModalOpen(false);
+    } catch (err) {
+      setError(currentCourse ? 'Erreur lors de la mise à jour du cours' : 'Erreur lors de la création du cours');
+      console.error(err);
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData({
       ...formData,
       [name]: name === 'capacite' ? parseInt(value) || 0 : value,
     });
   };
+
+  if (loading) return <p>Chargement...</p>;
+  if (error) return <p>{error}</p>;
 
   return (
     <div>
@@ -198,7 +215,7 @@ const Courses = () => {
               <option value="">Sélectionner un enseignant</option>
               {enseignants.map(enseignant => (
                 <option key={enseignant.id} value={enseignant.id}>
-                  {enseignant.nom}
+                  {enseignant.nom} {enseignant.prenom}
                 </option>
               ))}
             </select>
@@ -217,7 +234,7 @@ const Courses = () => {
               <option value="">Sélectionner un statut</option>
               {statuts.map(statut => (
                 <option key={statut.id} value={statut.id}>
-                  {statut.label}
+                  {statut.nom}
                 </option>
               ))}
             </select>
